@@ -2,19 +2,20 @@
 
 Este repositório contém a implementação do segundo trabalho prático da disciplina **Processamento de Sinais (ELE042 - UFMG)**.
 
-O projeto dá continuidade ao primeiro trabalho prático, no qual foi utilizado um filtro IIR para restaurar um áudio corrompido por ruído de faixa larga. Nesta segunda etapa, o objetivo é reprojetar a filtragem utilizando um filtro FIR passa-baixas projetado pelo método da janela de Kaiser, além de implementar uma abordagem adaptativa baseada na Transformada Breve de Fourier (STFT).
+O projeto dá continuidade ao TP1, substituindo a abordagem com filtro IIR por um filtro FIR passa-baixas projetado pelo método da janela de Kaiser. Também é incluída uma etapa bônus de filtragem adaptativa baseada em STFT.
 
 ## Objetivos
 
-- Carregar e analisar o sinal de áudio corrompido nos domínios do tempo e da frequência.
-- Projetar um filtro FIR passa-baixas pelo método da janela de Kaiser.
-- Comparar diferentes formas de filtragem:
-  - equação de diferenças;
-  - convolução direta;
-  - filtragem no domínio da frequência.
-- Comparar qualitativamente a filtragem FIR com a abordagem IIR do primeiro trabalho.
-- Implementar, como bônus, uma filtragem adaptativa baseada em STFT.
-- Gerar gráficos e arquivos de áudio filtrados automaticamente.
+* Analisar o áudio corrompido nos domínios do tempo e da frequência.
+* Projetar um filtro FIR passa-baixas por janela de Kaiser.
+* Aplicar a filtragem por três métodos:
+
+  * equação de diferenças;
+  * convolução direta;
+  * domínio da frequência.
+* Comparar os resultados obtidos com a abordagem IIR do TP1.
+* Implementar uma filtragem adaptativa via STFT como bônus.
+* Gerar automaticamente gráficos e arquivos de áudio filtrados.
 
 ## Estrutura do repositório
 
@@ -22,12 +23,47 @@ O projeto dá continuidade ao primeiro trabalho prático, no qual foi utilizado 
 .
 ├── README.md
 ├── requirements.txt
+├── .gitignore
 ├── src/
 │   └── tp2_dsp.py
 ├── data/
 │   └── audio_corrompido.wav
 ├── resultados_tp2/
-│   ├── figuras geradas pelo script
-│   └── áudios filtrados
 └── relatorio/
     └── Relatorio_Trabalho_Pratico_2.pdf
+```
+
+## Dependências
+
+As bibliotecas necessárias estão listadas em `requirements.txt`.
+
+Para instalar:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Como executar
+
+A partir da pasta principal do repositório:
+
+```bash
+python src/tp2_dsp.py data/audio_corrompido.wav
+```
+
+Os gráficos e áudios gerados são salvos automaticamente na pasta:
+
+```text
+resultados_tp2/
+```
+
+## Arquivos principais
+
+* `src/tp2_dsp.py`: script principal do trabalho.
+* `data/audio_corrompido.wav`: áudio de entrada utilizado no processamento.
+* `resultados_tp2/`: pasta com os resultados gerados.
+* `relatorio/`: pasta destinada ao relatório final em PDF.
+
+## Observação
+
+Os arquivos `.mat` utilizados no TP1 não são necessários neste trabalho, pois os coeficientes do filtro FIR são calculados diretamente pelo código.

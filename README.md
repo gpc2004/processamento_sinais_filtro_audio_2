@@ -48,7 +48,12 @@ pip install -r requirements.txt
 A partir da pasta principal do repositório:
 
 ```bash
-python src/tp2_dsp.py data/audio_corrompido.wav
+python src/tp2_dsp.py
+```
+
+Por padrão, o programa utiliza o arquivo:
+```text
+data/audio_corrompido.wav
 ```
 
 Os gráficos e áudios gerados são salvos automaticamente na pasta:
@@ -56,6 +61,18 @@ Os gráficos e áudios gerados são salvos automaticamente na pasta:
 ```text
 resultados_tp2/
 ```
+
+Também é possível passar outro arquivo de áudio como parâmetro. Para isso, informe o caminho do arquivo na chamada do programa:
+```bash
+python src/tp2_dsp.py caminho/para/outro_audio.wav
+```
+
+Por exemplo, caso exista outro arquivo dentro da pasta data, chamado meu_audio.wav, execute:
+```bash
+python src/tp2_dsp.py data/meu_audio.wav
+```
+
+Nesse caso, o código processará o áudio informado em vez de utilizar o arquivo padrão data/audio_corrompido.wav.
 
 ## Arquivos principais
 

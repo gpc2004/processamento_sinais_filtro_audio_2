@@ -1,115 +1,126 @@
-# -*- coding: utf-8 -*-
-"""
-TP2 - Processamento de Sinais (ELE042 - UFMG)
-Filtragem FIR (janela de Kaiser) + Filtragem adaptativa via STFT (bonus)
-
-Autor: (preencher nomes do grupo)
-
-Como usar:
-    python tp2_dsp.py audio_corrompido.wav
-
-Se nenhum arquivo for passado, ou o arquivo nao existir, o script gera
-um sinal sintetico de teste (tom + ruido de faixa larga em um trecho)
-para que toda a pipeline possa ser demonstrada mesmo sem o .wav original.
-
-Dependencias:
-    pip install numpy scipy matplotlib soundfile sounddevice
-"""
-
 import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
 from scipy.signal import ShortTimeFFT
-
 import soundfile as sf
 
 try:
     import sounddevice as sd
-    HAS_SOUNDDEVICE = True
+    TEM_SOM = True
 except Exception:
-    HAS_SOUNDDEVICE = False
+    TEM_SOM = False
 
-OUT_DIR = "resultados_tp2"
-os.makedirs(OUT_DIR, exist_ok=True)
+DIR_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DIR_SAIDA = os.path.join(DIR_BASE, "resultados_tp2")
 
+os.makedirs(DIR_SAIDA, exist_ok=True)
 
-# --------------------------------------------------------------------------
-# Utilidades
-# --------------------------------------------------------------------------
-def savefig(fig, name):
-    path = os.path.join(OUT_DIR, name)
+#? --------------------------------------------------------------------------
+#? Utilidades
+#? --------------------------------------------------------------------------
+def salva_figura(fig, name):
+    # Monta o caminho completo do arquivo
+    path = os.path.join(DIR_SAIDA, name)
+
+    # Salva a figura no caminho definido
     fig.savefig(path, dpi=150, bbox_inches="tight")
-    print(f"[fig salva] {path}")
+    print(f"Figura salva em \'{path}\'")
 
 
-def play_audio(x, fs, label=""):
-    """Reproduz o audio no sistema de som, se disponivel."""
-    if not HAS_SOUNDDEVICE:
-        print(f"[aviso] sounddevice indisponivel - pulando reproducao ({label}).")
+def toca_audio(x, fs, label=""):
+    # Reproduz o audio no sistema de som, se disponivel
+    if not TEM_SOM:
+        print(f"Aviso: biblioteca sounddevice indisponível.  Pulando reprodução ({label}).")
         return
-    print(f"Reproduzindo: {label} ...")
-    xn = x / (np.max(np.abs(x)) + 1e-12) * 0.9
+    
+    print(f"Reproduzindo: {label}...")
+
+    # X é o vetor de amostras do áudio
+    # Normaliza o áudio antes de tocar, dividindo o sinal inteiro pelo maior valor absoluto
+    xn = x / (np.max(np.abs(x)) + 1e-12) * 0.9 # 0.9 p/ evitar risco de saturação
+
+    # Toca o aúdio
     sd.play(xn.astype(np.float32), fs)
-    sd.wait()
+    sd.wait() # Espera reprodução do áudio acabar
 
 
-def generate_synthetic_signal(fs=44100, dur=10.0):
-    """Gera sinal sintetico (tom + ruido de faixa larga em trecho central)
-    para permitir testar o script sem o arquivo original."""
-    n = int(fs * dur)
+def gerar_sinal_sintetico(fs=44100, duracao=10.0, semente=42):
+    # Gera tom + ruído de faixa larga em trecho central
+    # para permitir testar o código sem o arquivo original (audio_corrompido.wav)
+    n = int(fs * duracao) # num total de amostras
     t = np.arange(n) / fs
-    x = 0.5 * np.sin(2 * np.pi * 440 * t) + 0.2 * np.sin(2 * np.pi * 1200 * t)
+    x = 0.5 * np.sin(2 * np.pi * 440 * t) + 0.2 * np.sin(2 * np.pi * 1200 * t) # Sinal limpo
 
-    i0, i1 = int(0.35 * n), int(0.65 * n)
-    rng = np.random.default_rng(42)
-    noise = rng.standard_normal(n)
-    # ruido de faixa larga 5-18kHz aproximadamente
-    sos = signal.butter(6, [5000, 18000], btype="bandpass", fs=fs, output="sos")
-    noise_bp = signal.sosfilt(sos, noise)
+    r0, r1 = int(0.35 * n), int(0.65 * n) # Intervalo com ruído
+    rng = np.random.default_rng(semente)
+    ruido = rng.standard_normal(n)
+
+    # Ruido de faixa larga 5-18kHz, aproximadamente
+    # S0S = Second-Order Sections -> mais estável do que representar filtros de ordem alta diretamente por polinômios.
+    sos = signal.butter(6, [5000, 18000], btype="bandpass", fs=fs, output="sos") # filtro Butterworth ordem 6 passa-faixa
+    ruido_filtrado = signal.sosfilt(sos, ruido)
+
+    # Aplica os ruídos no intervalo
     mask = np.zeros(n)
-    mask[i0:i1] = 1.0
-    x = x + 0.6 * noise_bp * mask
+    mask[r0:r1] = 1.0
+
+    x = x + 0.6 * ruido_filtrado * mask
     x = x / (np.max(np.abs(x)) + 1e-9) * 0.9
+
+    # Retorna o sinal sintético em formato de número real de 64 bits
     return x.astype(np.float64), fs
 
 
-# --------------------------------------------------------------------------
-# 1.1 - Carregamento e visualizacao do sinal corrompido
-# --------------------------------------------------------------------------
-def load_and_plot_signal(path):
+#* --------------------------------------------------------------------------
+#* 1.1 - Carregamento e visualização do sinal corrompido
+#* --------------------------------------------------------------------------
+def carregar_e_plotar(path):
+    # Verifica se o sinal existe
     if path and os.path.isfile(path):
-        x, fs = sf.read(path)
+        # Lê o áudio e vetoriza
+        x, fs = sf.read(path)  
+
+        # Tratamento para áudios com mais de 1 canal
         if x.ndim > 1:
+            #  Pega a média
             x = x.mean(axis=1)
+
         print(f"Arquivo carregado: {path} | fs = {fs} Hz | N = {len(x)} amostras")
+
     else:
-        print("[aviso] Arquivo de audio nao encontrado - usando sinal sintetico de teste.")
-        x, fs = generate_synthetic_signal()
+        print("Arquivo de audio não encontrado - usando sinal sintético de teste.")
+        x, fs = gerar_sinal_sintetico()
 
     n = len(x)
     t = np.arange(n) / fs
 
+    # Cálculo do espectro
     X = np.fft.fftshift(np.fft.fft(x))
     f = np.fft.fftshift(np.fft.fftfreq(n, d=1 / fs)) / 1000.0  # kHz
 
+    # Gráfico
     fig, axs = plt.subplots(1, 2, figsize=(12, 4))
     axs[0].plot(t, x)
     axs[0].set_xlabel("t (s)")
     axs[0].set_ylabel("x(t)")
-    axs[0].set_title("Sinal corrompido - dominio do tempo")
+    axs[0].set_title("Sinal corrompido - domínio do tempo")
 
     axs[1].plot(f, np.abs(X) / n)
     axs[1].set_xlabel("f (kHz)")
     axs[1].set_ylabel("|X(e^{j$\\omega$})|")
     axs[1].set_title("Espectro de amplitude")
     fig.tight_layout()
-    savefig(fig, "1_sinal_corrompido.png")
+    salva_figura(fig, "1_sinal_corrompido.png")
     plt.close(fig)
 
+    # Retorna vetor de amostras do sinal de áudio + fs
     return x, fs
 
+#* --------------------------------------------------------------------------
+#* 1.2 Na main
+#* --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
 # 1.3/1.4 - Projeto do filtro FIR (janela de Kaiser)
@@ -143,7 +154,7 @@ def design_fir_kaiser(fs, fp=5000.0, fr=6000.0, ripple_pct=0.1):
     ax.set_ylabel("w[n]")
     ax.set_title(f"Janela de Kaiser (N={numtaps}, beta={beta:.3f})")
     fig.tight_layout()
-    savefig(fig, "2_janela_kaiser.png")
+    salva_figura(fig, "2_janela_kaiser.png")
     plt.close(fig)
 
     return h, numtaps, beta
@@ -157,7 +168,7 @@ def plot_filter_response(h, fs, fmax_khz=22):
     ax.set_ylabel("h[n]")
     ax.set_title("Resposta ao impulso do filtro FIR")
     fig.tight_layout()
-    savefig(fig, "3_resposta_impulso_fir.png")
+    salva_figura(fig, "3_resposta_impulso_fir.png")
     plt.close(fig)
 
     w, H = signal.freqz(h, worN=8192, fs=fs)
@@ -176,7 +187,7 @@ def plot_filter_response(h, fs, fmax_khz=22):
     axs[1].set_title("Resposta em fase")
     axs[1].grid(True)
     fig.tight_layout()
-    savefig(fig, "4_resposta_freq_fir.png")
+    salva_figura(fig, "4_resposta_freq_fir.png")
     plt.close(fig)
 
 
@@ -229,7 +240,7 @@ def compare_filtering_methods(x, h, fs):
     ax.legend()
     ax.set_title("Sinal filtrado (FIR) - comparacao dos metodos")
     fig.tight_layout()
-    savefig(fig, "5_sinal_filtrado_tempo.png")
+    salva_figura(fig, "5_sinal_filtrado_tempo.png")
     plt.close(fig)
 
     Y = np.fft.fftshift(np.fft.fft(y_de))
@@ -240,9 +251,23 @@ def compare_filtering_methods(x, h, fs):
     ax.set_ylabel("|Y(e^{j$\\omega$})|")
     ax.set_title("Espectro do sinal filtrado (FIR)")
     fig.tight_layout()
-    savefig(fig, "6_sinal_filtrado_freq.png")
+    salva_figura(fig, "6_sinal_filtrado_freq.png")
     plt.close(fig)
 
     return y_de  # usaremos a versao "equacao de diferencas" como referencia
 
+def execucao():
+    if len(sys.argv) > 1:
+        wav_path = sys.argv[1]
+    else:
+        wav_path = os.path.join(DIR_BASE, "data", "audio_corrompido.wav")
 
+    #! 1.1 - Carregamento e plot
+    x, fs = carregar_e_plotar(wav_path)
+
+    #! 1.2 - Reprodução do sinal corrompido
+    toca_audio(x, fs, label="sinal corrompido")
+
+
+if __name__ == "__main__":
+    execucao()

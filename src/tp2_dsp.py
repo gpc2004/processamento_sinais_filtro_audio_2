@@ -25,7 +25,7 @@ def salva_figura(fig, name):
     path = os.path.join(DIR_SAIDA, name)
 
     # Salva a figura no caminho definido
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
     print(f"Figura salva em \'{path}\'")
 
 
@@ -120,7 +120,7 @@ def carregar_e_plotar(path):
 
 
 #* --------------------------------------------------------------------------
-#* 1.2 Na main
+#* 1.2 No main
 #* --------------------------------------------------------------------------
 
 
@@ -165,6 +165,7 @@ def design_fir_kaiser(fs, fp=5000.0, fr=6000.0, ripple_porcentagem=0.1):
 
     return h, num_coef, beta
 
+
 #* --------------------------------------------------------------------------
 #* 1.4 - Resposta ao impulso e respostas de magnitude
 #* --------------------------------------------------------------------------
@@ -208,23 +209,24 @@ def plota_respostas_filtro(h, fs, fmax_khz=22):
 
 
 #* --------------------------------------------------------------------------
-#* 1.5 - Filtragem por 3 metodos (equacao de diferencas, convolucao, frequencia)
+#* 1.5 - Filtragem por 3 métodos (equação de diferenças, convolução e frequência)
 #* --------------------------------------------------------------------------
-def filter_diff_equation(x, b):
-    """Filtragem via equacao de diferencas (FIR: a=[1])."""
+def filtra_equacao_diff(x, b):
+    # Filtragem via equação de diferenças
+    # FIR: a=[1], H(z) = B(z) / 1
     return signal.lfilter(b, [1.0], x)
 
 
-def filter_convolution(x, h):
-    """Filtragem via convolucao direta (linear, full, depois truncada)."""
+def filtra_convolucao(x, h):
+    # Filtragem via convolução direta (linear, full, depois truncada).
     y = np.convolve(x, h, mode="full")
-    return y[: len(x)]  # mesmo comprimento de x para comparacao direta
+    return y[: len(x)]  # mesmo comprimento de x para compa direta
 
 
-def filter_frequency_domain(x, h):
-    """Filtragem no dominio da frequencia via FFT (convolucao circular
-    com zero-padding suficiente para evitar wrap-around -> equivalente
-    a convolucao linear)."""
+def filtra_frequencia(x, h):
+    # Filtragem no domínio da frequência via FFT (convolução circular
+    # com zero-padding suficiente para evitar wrap-around -> equivalente
+    # a convolução linear).
     n = len(x) + len(h) - 1
     nfft = 1
     while nfft < n:
@@ -235,42 +237,50 @@ def filter_frequency_domain(x, h):
     return y[: len(x)]
 
 
-def compare_filtering_methods(x, h, fs):
-    y_de = filter_diff_equation(x, h)
-    y_conv = filter_convolution(x, h)
-    y_freq = filter_frequency_domain(x, h)
+def comparacao_filtros(x, h, fs):
+    y_eq = filtra_equacao_diff(x, h)
+    y_conv = filtra_convolucao(x, h)
+    y_freq = filtra_frequencia(x, h)
 
-    err_conv = np.max(np.abs(y_de - y_conv))
-    err_freq = np.max(np.abs(y_de - y_freq))
-    print(f"Erro maximo |dif.eq - convolucao| = {err_conv:.3e}")
-    print(f"Erro maximo |dif.eq - frequencia|  = {err_freq:.3e}")
+    err_conv = np.max(np.abs(y_eq - y_conv))
+    err_freq = np.max(np.abs(y_eq - y_freq))
+    print(f"Erro máximo |dif.eq - convolução| = {err_conv:.3e}")
+    print(f"Erro máximo |dif.eq - frequência|  = {err_freq:.3e}")
 
+    # Plots
     n = len(x)
     t = np.arange(n) / fs
     fig, ax = plt.subplots(figsize=(9, 4))
-    ax.plot(t, y_de, label="Equacao de diferencas")
-    ax.plot(t, y_conv, "--", label="Convolucao", alpha=0.7)
-    ax.plot(t, y_freq, ":", label="Dominio da frequencia", alpha=0.7)
+    ax.plot(t, y_eq, label="Equação de diferenças")
+    ax.plot(t, y_conv, "--", label="Convolução", alpha=0.7)
+    ax.plot(t, y_freq, ":", label="Domínio da frequência", alpha=0.7)
     ax.set_xlabel("t (s)")
     ax.set_ylabel("y[n]")
     ax.legend()
-    ax.set_title("Sinal filtrado (FIR) - comparacao dos metodos")
+    ax.set_title("Comparação entre métodos de implementação do filtro FIR")
     fig.tight_layout()
     salva_figura(fig, "5_sinal_filtrado_tempo.png")
     plt.close(fig)
 
-    Y = np.fft.fftshift(np.fft.fft(y_de))
+    Y = np.fft.fftshift(np.fft.fft(y_eq))
     f = np.fft.fftshift(np.fft.fftfreq(n, d=1 / fs)) / 1000.0
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(f, np.abs(Y) / n)
     ax.set_xlabel("f (kHz)")
-    ax.set_ylabel("|Y(e^{j$\\omega$})|")
+    ax.set_ylabel(r"$|Y(e^{j\omega})|$")
     ax.set_title("Espectro do sinal filtrado (FIR)")
     fig.tight_layout()
     salva_figura(fig, "6_sinal_filtrado_freq.png")
     plt.close(fig)
 
-    return y_de  # usaremos a versao "equacao de diferencas" como referencia
+    return y_eq  # Retorna a versão da equação de diferenças como referência
+
+
+#* --------------------------------------------------------------------------
+#* 1.6 - No main
+#* --------------------------------------------------------------------------
+
+
 
 def execucao():
     if len(sys.argv) > 1:
@@ -290,7 +300,13 @@ def execucao():
     #! 1.4 - Respostas do gráfico
     plota_respostas_filtro(h, fs)
 
-    #! 1.5
+    #! 1.5 - Filtragem (3 métodos) + comparação
+    y_fir = comparacao_filtros(x, h, fs)
+
+    #! 1.6 - Reprodução do sinal filtrado (linear/FIR)
+    toca_audio(y_fir, fs, label="Sinal filtrado (FIR linear)")
+
+    #! Bônus
     #todo
 
 

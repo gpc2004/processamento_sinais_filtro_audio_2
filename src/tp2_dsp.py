@@ -63,10 +63,10 @@ def gerar_sinal_sintetico(fs=44100, duracao=10.0, semente=42):
     ruido_filtrado = signal.sosfilt(sos, ruido)
 
     # Aplica os ruídos no intervalo
-    mask = np.zeros(n)
-    mask[r0:r1] = 1.0
+    limite_f = np.zeros(n)
+    limite_f[r0:r1] = 1.0
 
-    x = x + 0.6 * ruido_filtrado * mask
+    x = x + 0.6 * ruido_filtrado * limite_f
     x = x / (np.max(np.abs(x)) + 1e-9) * 0.9
 
     # Retorna o sinal sintético em formato de número real de 64 bits
@@ -109,7 +109,7 @@ def carregar_e_plotar(path):
 
     axs[1].plot(f, np.abs(X) / n)
     axs[1].set_xlabel("f (kHz)")
-    axs[1].set_ylabel("|X(e^{j$\\omega$})|")
+    axs[1].set_ylabel(r"$|X(e^{j\omega})|$")
     axs[1].set_title("Espectro de amplitude")
     fig.tight_layout()
     salva_figura(fig, "1_sinal_corrompido.png")
@@ -118,72 +118,88 @@ def carregar_e_plotar(path):
     # Retorna vetor de amostras do sinal de áudio + fs
     return x, fs
 
+
 #* --------------------------------------------------------------------------
 #* 1.2 Na main
 #* --------------------------------------------------------------------------
 
-# --------------------------------------------------------------------------
-# 1.3/1.4 - Projeto do filtro FIR (janela de Kaiser)
-# --------------------------------------------------------------------------
-def design_fir_kaiser(fs, fp=5000.0, fr=6000.0, ripple_pct=0.1):
-    """Projeta filtro FIR passa-baixas pelo metodo da janela de Kaiser.
-    Ap = Ar = ripple_pct (%) -> convertido para atenuacao em dB.
-    """
-    delta = ripple_pct / 100.0  # 0.1% -> 0.001
-    atten_db = -20 * np.log10(delta)  # atenuacao equivalente (~60 dB para 0.1%)
 
-    width_hz = fr - fp
-    numtaps, beta = signal.kaiserord(atten_db, width_hz / (fs / 2))
-    if numtaps % 2 == 0:
-        numtaps += 1  # ordem N (numero de coeficientes) impar -> fase linear tipo I
+#* --------------------------------------------------------------------------
+#* 1.3 - Projeto do filtro FIR (janela de Kaiser)
+#* --------------------------------------------------------------------------
+def design_fir_kaiser(fs, fp=5000.0, fr=6000.0, ripple_porcentagem=0.1):
+    # Projeta filtro FIR passa-baixas pelo metodo da janela de Kaiser
+    delta = ripple_porcentagem / 100.0  # 0.1% -> 0.001
+    atenuacao_db = -20 * np.log10(delta)  # atenuação equivalente em dB
 
+    largura_hz = fr - fp
+
+    # Estima os parâmetros necessários para projetar um filtro FIR com janela de Kaiser
+    num_coef, beta = signal.kaiserord(atenuacao_db, largura_hz / (fs / 2))
+    if num_coef % 2 == 0:  #  Se for par
+        num_coef += 1  # ordem N (número de coeficientes) ímpar -> fase linear tipo I
+
+    # Frequência de corte é a média
     fc = (fp + fr) / 2.0
-    h = signal.firwin(numtaps, fc, window=("kaiser", beta), fs=fs)
+
+    # Projeta o filtro FIR pelo método da janela
+    h = signal.firwin(num_coef, fc, window=("kaiser", beta), fs=fs)
 
     print(f"--- Projeto FIR (Kaiser) ---")
-    print(f"Atenuacao alvo (Ap=Ar={ripple_pct}%): {atten_db:.2f} dB")
-    print(f"Ordem do filtro N (numero de coeficientes): {numtaps}")
-    print(f"Parametro beta: {beta:.4f}")
-    print(f"Frequencia de corte (fc): {fc:.1f} Hz")
+    print(f"Atenuação alvo (Ap = {ripple_porcentagem}%): {atenuacao_db:.2f} dB")
+    print(f"Ordem do filtro N (número de coeficientes): {num_coef}")
+    print(f"Parâmetro beta: {beta:.4f}")
+    print(f"Frequência de corte (fc): {fc:.1f} Hz")
 
-    # Grafico da janela de Kaiser usada
-    w_kaiser = signal.windows.kaiser(numtaps, beta)
+    w_kaiser = signal.windows.kaiser(num_coef, beta) # Vetor com num_coef amostras
+
+    # Gráfico da janela de Kaiser usada
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(np.arange(numtaps), w_kaiser, marker=".", ms=3)
+    ax.plot(np.arange(num_coef), w_kaiser, marker=".", ms=3)
     ax.set_xlabel("n")
     ax.set_ylabel("w[n]")
-    ax.set_title(f"Janela de Kaiser (N={numtaps}, beta={beta:.3f})")
+    ax.set_title(f"Janela de Kaiser (N={num_coef}, beta={beta:.3f})")
     fig.tight_layout()
     salva_figura(fig, "2_janela_kaiser.png")
     plt.close(fig)
 
-    return h, numtaps, beta
+    return h, num_coef, beta
 
-
-def plot_filter_response(h, fs, fmax_khz=22):
+#* --------------------------------------------------------------------------
+#* 1.4 - Resposta ao impulso e respostas de magnitude
+#* --------------------------------------------------------------------------
+def plota_respostas_filtro(h, fs, fmax_khz=22):
+    # Tamanho do vetor
     n = len(h)
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.stem(np.arange(n), h, basefmt=" ")
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(10, 4))
+    markerline, stemlines, baseline = ax.stem(np.arange(n), h, basefmt=" ")
+    plt.setp(markerline, markersize=3)
+    plt.setp(stemlines, linewidth=0.8)
     ax.set_xlabel("n")
-    ax.set_ylabel("h[n]")
+    ax.set_ylabel(r"$h[n]$")
     ax.set_title("Resposta ao impulso do filtro FIR")
+    ax.grid(True, alpha=0.3)
     fig.tight_layout()
     salva_figura(fig, "3_resposta_impulso_fir.png")
     plt.close(fig)
 
+    # Cálculo da resposta em frequência
     w, H = signal.freqz(h, worN=8192, fs=fs)
-    f_khz = w / 1000.0
-    mask = f_khz <= fmax_khz
+    f_khz = w / 1000.0 # Converte o eixo de frequências de Hz para kHz
+    limite_f = f_khz <= fmax_khz # Limite para mostrar penas frequências até fmax_khz
 
+    # Plot com magnitude e fase
     fig, axs = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
-    axs[0].plot(f_khz[mask], 20 * np.log10(np.abs(H[mask]) + 1e-12))
-    axs[0].set_ylabel("|H(e^{j$\\omega$})| (dB)")
+    axs[0].plot(f_khz[limite_f], 20 * np.log10(np.abs(H[limite_f]) + 1e-12))
+    axs[0].set_ylabel(r"$|X(e^{j\omega})|$ (dB)")
     axs[0].set_title("Resposta em magnitude")
     axs[0].grid(True)
 
-    axs[1].plot(f_khz[mask], np.unwrap(np.angle(H[mask])))
+    axs[1].plot(f_khz[limite_f], np.unwrap(np.angle(H[limite_f])))
     axs[1].set_xlabel("f (kHz)")
-    axs[1].set_ylabel("$\\theta(\\omega)$ (rad)")
+    axs[1].set_ylabel(r"$\theta(\omega)$ (rad)")
     axs[1].set_title("Resposta em fase")
     axs[1].grid(True)
     fig.tight_layout()
@@ -191,9 +207,9 @@ def plot_filter_response(h, fs, fmax_khz=22):
     plt.close(fig)
 
 
-# --------------------------------------------------------------------------
-# 1.5 - Filtragem por 3 metodos (equacao de diferencas, convolucao, frequencia)
-# --------------------------------------------------------------------------
+#* --------------------------------------------------------------------------
+#* 1.5 - Filtragem por 3 metodos (equacao de diferencas, convolucao, frequencia)
+#* --------------------------------------------------------------------------
 def filter_diff_equation(x, b):
     """Filtragem via equacao de diferencas (FIR: a=[1])."""
     return signal.lfilter(b, [1.0], x)
@@ -266,7 +282,16 @@ def execucao():
     x, fs = carregar_e_plotar(wav_path)
 
     #! 1.2 - Reprodução do sinal corrompido
-    toca_audio(x, fs, label="sinal corrompido")
+    #toca_audio(x, fs, label="sinal corrompido")
+
+    #! 1.3 - Projeto do filtro FIR
+    h, N, beta = design_fir_kaiser(fs, fp=5000.0, fr=6000.0, ripple_porcentagem=0.1)
+
+    #! 1.4 - Respostas do gráfico
+    plota_respostas_filtro(h, fs)
+
+    #! 1.5
+    #todo
 
 
 if __name__ == "__main__":

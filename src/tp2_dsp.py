@@ -280,6 +280,68 @@ def comparacao_filtros(x, h, fs):
 #* 1.6 - No main
 #* --------------------------------------------------------------------------
 
+#? --------------------------------------------------------------------------
+#? BÔNUS - 2.1 STFT com reconstrução perfeita
+#? --------------------------------------------------------------------------
+def calcula_stft(fs, tamanho_janela=1024, deslocamento_janela=4):
+    # Constroi um objeto ShortTimeFFT com janela de Hann e parametros que
+    # satisfazem a condição de reconstrução perfeita).
+
+    # Calcula o deslocamento entre uma janela e a próxima.
+    janela = tamanho_janela // deslocamento_janela  # 75% de sobreposição
+
+    janela_hann = signal.windows.hann(tamanho_janela, sym=False)
+
+    # Objeto usado para calcular a STFT
+    SFT = ShortTimeFFT(janela_hann, hop=janela, fs=fs, mfft=tamanho_janela, scale_to="magnitude")
+
+    print(f"--- STFT (bônus) ---")
+    print(f"Janela: Hann\nLargura = {tamanho_janela} amostras\nPasso (janela) = {janela} amostras")
+    print(f"Sobreposição: {100 * (1 - janela / tamanho_janela):.0f}%")
+
+    return SFT
+
+
+#? --------------------------------------------------------------------------
+#? BÔNUS - 2.2 Espectograma
+#? --------------------------------------------------------------------------
+def plota_espectrograma(SFT, x, fs):
+    # Calcula a STFT do sinal x
+    Sx = SFT.stft(x)
+
+    # Eixo de tempo
+    t_stft = SFT.t(len(x))
+    # Eixo da frequência
+    f_stft = SFT.f / 1000.0  # kHz
+
+    mag_db = 20 * np.log10(np.abs(Sx) + 1e-12) # Evita erro com log 0
+
+    # Plota 2D
+    fig, ax = plt.subplots(figsize=(9, 5))
+    im = ax.pcolormesh(t_stft, f_stft, mag_db, shading="gouraud", cmap="viridis")
+    ax.set_xlabel("t (s)")
+    ax.set_ylabel("f (kHz)")
+    ax.set_title("Espectrograma (STFT) - 2D")
+    fig.colorbar(im, ax=ax, label="dB")
+    fig.tight_layout()
+    salva_figura(fig, "7_espectrograma_2d.png")
+    plt.close(fig)
+
+    # Plota 3D
+    fig = plt.figure(figsize=(9, 6))
+    ax3 = fig.add_subplot(111, projection="3d")
+    Tg, Fg = np.meshgrid(t_stft, f_stft)
+    step = max(1, mag_db.shape[1] // 200)  # reduz pontos p/ performance
+    ax3.plot_surface(Tg[:, ::step], Fg[:, ::step], mag_db[:, ::step], cmap="viridis", linewidth=0)
+    ax3.set_xlabel("t (s)")
+    ax3.set_ylabel("f (kHz)")
+    ax3.set_zlabel("dB")
+    ax3.set_title("Espectrograma (STFT) - 3D")
+    fig.tight_layout()
+    salva_figura(fig, "8_espectrograma_3d.png")
+    plt.close(fig)
+
+    return Sx
 
 
 def execucao():
@@ -292,7 +354,7 @@ def execucao():
     x, fs = carregar_e_plotar(wav_path)
 
     #! 1.2 - Reprodução do sinal corrompido
-    #toca_audio(x, fs, label="sinal corrompido")
+    toca_audio(x, fs, label="sinal corrompido")
 
     #! 1.3 - Projeto do filtro FIR
     h, N, beta = design_fir_kaiser(fs, fp=5000.0, fr=6000.0, ripple_porcentagem=0.1)
@@ -306,7 +368,14 @@ def execucao():
     #! 1.6 - Reprodução do sinal filtrado (linear/FIR)
     toca_audio(y_fir, fs, label="Sinal filtrado (FIR linear)")
 
-    #! Bônus
+    #? Bônus
+    #! 2.1 - Calcula a STFT do sinal
+    SFT = calcula_stft(fs, tamanho_janela=1024, deslocamento_janela=4)
+
+    #! 2.2 - Plota espectrograma
+    plota_espectrograma(SFT, x, fs)
+
+    #! 2.3
     #todo
 
 

@@ -72,6 +72,17 @@ def gerar_sinal_sintetico(fs=44100, duracao=10.0, semente=42):
     # Retorna o sinal sintético em formato de número real de 64 bits
     return x.astype(np.float64), fs
 
+# Análise comparativa simples
+def medir_energia(y, fc, fs):
+    # Calcula uma métrica simples de energia espectral acima de uma frequência de corte
+    Y = np.abs(np.fft.rfft(y))
+
+    # Cria o eixo de frequências correspondente a FFT real do sinal  
+    f = np.fft.rfftfreq(len(y), d=1 / fs)
+
+    # Seleciona apenas as frequências acima de fc e soma o quadrado das magnitudes
+    return np.sum(Y[f >= fc] ** 2)
+
 
 #* --------------------------------------------------------------------------
 #* 1.1 - Carregamento e visualização do sinal corrompido
@@ -343,6 +354,107 @@ def plota_espectrograma(SFT, x, fs):
 
     return Sx
 
+#? --------------------------------------------------------------------------
+#? BÔNUS - 2.3 Filtragem adaptativa
+#? --------------------------------------------------------------------------
+def filtro_adaptativo(x, fs, h, SFT, fr=6000.0, limiar=None):
+    """
+    Para cada coluna (frame) da STFT:
+      - Calcula a variância das magnitudes acima de fr (6 kHz);
+      - Se a variância for alta (indício de ruído de faixa larga),
+        usa, para aquele frame, a STFT do sinal já filtrado pelo FIR
+        (calculado via equacao de diferencas no dominio do tempo);
+      - Caso contrário, mantem a STFT do sinal original (preserva altas
+        frequências do áudio limpo).
+    Em seguida, reconstroi via iSTFT.
+    """
+
+    # Sinal totalmente filtrado pelo FIR (equação de diferenças) - candidato
+    y_filt_full = filtra_equacao_diff(x, h)
+    # Garante mesmo comprimento para o objeto STFT
+    n = len(x)
+    y_filt_full = y_filt_full[:n]
+
+    Sx_orig = SFT.stft(x)
+    Sx_filt = SFT.stft(y_filt_full)
+
+    # Obtém vetor de frequêmncias da STFT em Hz
+    f_stft = SFT.f
+    # Seleciona os índices das frequências maiores ou iguais a 6 kHz
+    indices_af = np.where(f_stft >= fr)[0]
+
+    # Calcula a variância das magnitudes acima de 6kHz
+    variacia_por_frame = np.var(np.abs(Sx_orig[indices_af, :]), axis=0)
+
+    if limiar is None:
+        # Limiar adaptativo: média + 1 desvio padrão da variância entre os frames
+        limiar = np.mean(variacia_por_frame) + np.std(variacia_por_frame)
+
+    # Máscara booleana que classifica, para cada frame:
+    # True: o frame foi classificado como ruidoso, então será usada a versão filtrada
+    # False: o frame foi classificado como limpo, então será mantida a versão original
+    mascara_decisao = variacia_por_frame > limiar
+
+    print(f"--- Filtragem adaptativa ---")
+    print(f"Limiar de variância usado: {limiar:.3e}")
+    print(f"Frames filtrados: {np.sum(mascara_decisao)} / {len(mascara_decisao)}")
+
+    # Construção da STFT híbrida
+    Sx_hybrid = Sx_orig.copy()
+    # Para todos os frames classificados como ruidosos, substituímos a STFT original pela STFT do sinal filtrado pelo FIR
+    Sx_hybrid[:, mascara_decisao] = Sx_filt[:, mascara_decisao]
+
+    # Reconstrução por iSTFT
+    y_adapt = SFT.istft(Sx_hybrid, k1=n)
+    y_adapt = np.real(y_adapt[:n])
+
+    # Gráfico da decisão de filtragem ao longo do tempo
+    t_frames = SFT.t(n)
+    fig, ax = plt.subplots(figsize=(9, 3.5))
+    ax.plot(t_frames, variacia_por_frame, label="Variância (>6kHz) por frame")
+    ax.axhline(limiar, color="r", ls="--", label="Limiar")
+    ax.fill_between(t_frames, 0, variacia_por_frame.max(), where=mascara_decisao,
+                     color="red", alpha=0.15, label="Filtro FIR aplicado")
+    ax.set_xlabel("t (s)")
+    ax.set_ylabel("Variância")
+    ax.legend()
+    ax.set_title("Decisão de filtragem adaptativa por frame (STFT)")
+    fig.tight_layout()
+    salva_figura(fig, "9_decisao_filtragem_adaptativa.png")
+    plt.close(fig)
+
+    # Retornamos o sinal filtrado adaptativamente, a máscara indicando quais frames foram filtrados e a variância calculada por frame
+    return y_adapt, mascara_decisao, variacia_por_frame
+
+
+#? --------------------------------------------------------------------------
+#? BÔNUS - 2.4 Reconstrução do sinal filtrado
+#? --------------------------------------------------------------------------
+def plota_sinal_tempo_e_freq(y, fs, title, fname):
+    # Número de amostras do sinal
+    n = len(y)
+
+    # Eixo do tempo
+    t = np.arange(n) / fs
+
+    # Eixo da frequência (em kHz)
+    f = np.fft.fftshift(np.fft.fftfreq(n, d=1 / fs)) / 1000.0
+
+    # FFT do sinal
+    Y = np.fft.fftshift(np.fft.fft(y))
+
+    # Plota
+    fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+    axs[0].plot(t, y)
+    axs[0].set_xlabel("t (s)")
+    axs[0].set_title(f"{title} - tempo")
+    axs[1].plot(f, np.abs(Y) / n)
+    axs[1].set_xlabel("f (kHz)")
+    axs[1].set_title(f"{title} - frequencia")
+    fig.tight_layout()
+    salva_figura(fig, fname)
+    plt.close(fig)
+
 
 def execucao():
     if len(sys.argv) > 1:
@@ -368,6 +480,8 @@ def execucao():
     #! 1.6 - Reprodução do sinal filtrado (linear/FIR)
     toca_audio(y_fir, fs, label="Sinal filtrado (FIR linear)")
 
+    #! 1.7 - Como depende do TP1, foi realizada no relatório
+
     #? Bônus
     #! 2.1 - Calcula a STFT do sinal
     SFT = calcula_stft(fs, tamanho_janela=1024, deslocamento_janela=4)
@@ -375,9 +489,34 @@ def execucao():
     #! 2.2 - Plota espectrograma
     plota_espectrograma(SFT, x, fs)
 
-    #! 2.3
-    #todo
+    #! 2.3 - Realiza a filtragem adaptativa do sinal
+    y_adapt, mask, var_frames = filtro_adaptativo(x, fs, h, SFT, fr=6000.0)
 
+    #! 2.4 - Reconstrução do sinal filtrado utilizando a iSTFT
+    plota_sinal_tempo_e_freq(y_adapt, fs, "Sinal filtrado (adaptativo)", "10_sinal_adaptativo.png")
+
+    #! 2.5 - Reprodução do sinal filtrado 
+    toca_audio(y_adapt, fs, label="sinal filtrado (adaptativo - STFT)")
+
+    #! 2.6 - Análises comparativas
+    e_orig_hf = medir_energia(x, 6000, fs)
+    e_fir_hf = medir_energia(y_fir, 6000, fs)
+    e_adapt_hf = medir_energia(y_adapt, 6000, fs)
+
+    print("\n--- Resumo comparativo (energia espectral acima de 6 kHz) ---")
+    print(f"Sinal original         : {e_orig_hf:.3e}")
+    print(f"Filtrado FIR (linear)  : {e_fir_hf:.3e}  ({100*e_fir_hf/e_orig_hf:.1f}% do original)")
+    print(f"Filtrado adaptativo    : {e_adapt_hf:.3e}  ({100*e_adapt_hf/e_orig_hf:.1f}% do original)")
+    print("\n=> O filtro linear remove componentes de alta frequencia em TODO o sinal\n"
+          "   (inclusive onde não há ruído), 'abafando' o áudio limpo.\n"
+          "=> O filtro adaptativo preserva as altas frequências nos trechos sem ruído\n"
+          "   detectado, aplicando a atenuação apenas onde a variância espectral em\n"
+          "   alta frequência indica a presenca do ruído de faixa larga.")
+
+    # Salva os áudios resultantes
+    sf.write(os.path.join(DIR_SAIDA, "saida_fir.wav"), y_fir / (np.max(np.abs(y_fir)) + 1e-9), fs)
+    sf.write(os.path.join(DIR_SAIDA, "saida_adaptativa.wav"), y_adapt / (np.max(np.abs(y_adapt)) + 1e-9), fs)
+    print(f"\nTodas as figuras e áudios de saida foram salvos em: {os.path.abspath(DIR_SAIDA)}")
 
 if __name__ == "__main__":
     execucao()
